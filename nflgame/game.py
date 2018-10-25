@@ -173,6 +173,14 @@ class GameClock (object):
     def quarter(self):
         return self.__qtr
 
+    @property
+    def minute(self):
+        return self._minutes
+
+    @property
+    def second(self):
+        return self._seconds
+
     @quarter.setter
     def quarter(self, value):
         if isinstance(value, int):
