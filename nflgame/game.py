@@ -6,6 +6,8 @@ import json
 import socket
 import sys
 import urllib2
+import csv
+import time
 from collections import OrderedDict
 
 import nflgame.player
@@ -17,6 +19,21 @@ _MAX_INT = sys.maxint
 
 _jsonf = path.join(path.split(__file__)[0], 'gamecenter-json', '%s.json.gz')
 _json_base_url = "http://www.nfl.com/liveupdate/game-center/%s/%s_gtd.json"
+
+_first_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'all_EPA_first.csv')
+_second_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'all_EPA_second.csv')
+_third_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'all_EPA_third.csv')
+
+
+with open(_first_down_EPA_url, 'rb') as f:
+    reader = csv.reader(f)
+    first_down_EPA_list = list(reader)
+with open(_second_down_EPA_url, 'rb') as f:
+    reader = csv.reader(f)
+    second_down_EPA_list = list(reader)
+with open(_third_down_EPA_url, 'rb') as f:
+    reader = csv.reader(f)
+    third_down_EPA_list = list(reader)
 
 GameDiff = namedtuple('GameDiff', ['before', 'after', 'plays', 'players'])
 """
@@ -582,6 +599,8 @@ class Play (object):
         self.yards_togo = int(data['ydstogo'])
         self.touchdown = 'touchdown' in self.desc.lower()
         self._stats = {}
+        self.EP_start = 0
+        self.EP_end = 0
 
         if not self.team:
             self.time, self.yardline = None, None
@@ -647,7 +666,21 @@ class Play (object):
         if name.startswith('__'):
             raise AttributeError
         return 0
+    
+    
+    @property
+    def EPA(self):
 
+        
+
+
+        if self.kicking_fgm :
+            self.EP_end = 3
+
+        if self.touchdown:
+            self.EP_end = 6.95
+        return self.EP_end - self.EP_start
+        
 
 def _json_team_stats(data):
     """
