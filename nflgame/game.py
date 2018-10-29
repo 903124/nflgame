@@ -607,7 +607,7 @@ class Play (object):
         else:
             self.time = GameClock(data['qtr'], data['time'])
             self.yardline = FieldPosition(self.team, data['yrdln'])
-
+            
         # Load team statistics directly into the Play instance.
         # Things like third down attempts, first downs, etc.
         if '0' in data['players']:
@@ -643,12 +643,59 @@ class Play (object):
         """Whether a player with id playerid participated in this play."""
         return playerid in self.__players
 
+
+    @property
+    def EPA(self):
+
+        
+        if(self.down == 1): #iniialize starting EPA
+
+            self.EP_start = first_down_EPA_list[int(50-self.yardline.offset)-1][max(int(self.yards_togo)-1,29)]
+
+        elif(self.down == 2):
+
+            self.EP_start = second_down_EPA_list[int(50-self.yardline.offset)-1][max(int(self.yards_togo)-1,29)]
+
+        elif(self.down == 3):
+
+            self.EP_start = third_down_EPA_list[int(50-self.yardline.offset)-1][max(int(self.yards_togo)-1,29)]
+
+
+        if(self.down < 4 and self.down != None):
+            if self.kicking_fgm :
+                self.EP_end = 3
+
+            elif self.touchdown:
+                if(self.defense_frec_tds or self.defense_int_tds or self.defense_misc_tds):
+                    self.EP_end = -6.95
+                else:
+                    self.EP_end = 6.95
+            else:
+                if(self.first_down):
+                    self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds)
+                    self.EP_end = first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+
+                elif(self.fumbles_lost or self.defense_int): #turnover
+                    self.new_yardline = int(50-self.yardline.offset-self.passing_incmp_air_yds-self.rushing_yds+self.fumbles_rec_yds+self.defense_int_yds)
+                    if(self.new_yardline <= 0): #touchback
+                        self.new_yardline = 20
+                    self.EP_end = first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+
+                else:
+                    self.new_down = self.down + 1
+                    self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds-self.passing_sk_yds)
+                    self.yards_togo = min(100-self.new_yardline,self.yards_togo+self.passing_yds+self.rushing_yds-self.passing_sk_yds)
+                    self.EP_end = first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+
+        return float(self.EP_end) - float(self.EP_start)
+
+
     def __str__(self):
         if self.team:
             if self.down != 0:
-                return '(%s, %s, Q%d, %d and %d) %s' \
+                return '(%s, %s, Q%d, %d and %d) %s EPA = %f' \
                        % (self.team, self.data['yrdln'], self.time.qtr,
-                          self.down, self.yards_togo, self.desc)
+                          self.down, self.yards_togo, self.desc, self.EPA)
             else:
                 return '(%s, %s, Q%d) %s' \
                        % (self.team, self.data['yrdln'], self.time.qtr,
@@ -666,20 +713,9 @@ class Play (object):
         if name.startswith('__'):
             raise AttributeError
         return 0
-    
-    
-    @property
-    def EPA(self):
-
-        
 
 
-        if self.kicking_fgm :
-            self.EP_end = 3
 
-        if self.touchdown:
-            self.EP_end = 6.95
-        return self.EP_end - self.EP_start
         
 
 def _json_team_stats(data):
