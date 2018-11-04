@@ -20,10 +20,10 @@ _MAX_INT = sys.maxint
 _jsonf = path.join(path.split(__file__)[0], 'gamecenter-json', '%s.json.gz')
 _json_base_url = "http://www.nfl.com/liveupdate/game-center/%s/%s_gtd.json"
 
-_first_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'all_EPA_first.csv')
-_second_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'all_EPA_second.csv')
-_third_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'all_EPA_third.csv')
-
+_first_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_first.csv')
+_second_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_second.csv')
+_third_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_third.csv')
+_fourth_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_fourth.csv')
 
 with open(_first_down_EPA_url, 'rb') as f:
     reader = csv.reader(f)
@@ -34,6 +34,9 @@ with open(_second_down_EPA_url, 'rb') as f:
 with open(_third_down_EPA_url, 'rb') as f:
     reader = csv.reader(f)
     third_down_EPA_list = list(reader)
+with open(_fourth_down_EPA_url, 'rb') as f:
+    reader = csv.reader(f)
+    fourth_down_EPA_list = list(reader)    
 
 GameDiff = namedtuple('GameDiff', ['before', 'after', 'plays', 'players'])
 """
@@ -659,17 +662,24 @@ class Play (object):
         elif(self.down == 3):
 
             self.EP_start = third_down_EPA_list[int(50-self.yardline.offset)-1][max(int(self.yards_togo)-1,29)]
+        elif(self.down == 4):
+
+            self.EP_start = fourth_down_EPA_list[int(50-self.yardline.offset)-1][max(int(self.yards_togo)-1,29)]    
 
 
-        if(self.down < 4 and self.down != None):
+        if(self.down != None):
             if self.kicking_fgm :
                 self.EP_end = 3
 
             elif self.touchdown:
-                if(self.defense_frec_tds or self.defense_int_tds or self.defense_misc_tds):
-                    self.EP_end = -6.95
-                else:
+                if self.passing_tds or self.rushing_tds:
                     self.EP_end = 6.95
+                else:
+                    self.EP_end = -6.95
+
+            elif self.defense_safe:
+                 self.EP_end = -2 - first_down_EPA_list[25-1][10-1]
+
             else:
                 if(self.first_down):
                     self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds)
@@ -679,13 +689,20 @@ class Play (object):
                     self.new_yardline = int(50-self.yardline.offset-self.passing_incmp_air_yds-self.rushing_yds+self.fumbles_rec_yds+self.defense_int_yds)
                     if(self.new_yardline <= 0): #touchback
                         self.new_yardline = 20
-                    self.EP_end = first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+                    self.EP_end = -float(first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]) 
 
                 else:
                     self.new_down = self.down + 1
-                    self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds-self.passing_sk_yds)
+                    self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds-self.passing_sk_yds+self.punting_yds-self.puntret_yds)
                     self.yards_togo = min(100-self.new_yardline,self.yards_togo+self.passing_yds+self.rushing_yds-self.passing_sk_yds)
-                    self.EP_end = first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+                    if(self.new_down == 2):
+                        self.EP_end = second_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+                    elif(self.new_down == 3):
+                        self.EP_end = third_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+                    elif(self.new_down == 4):
+                        self.EP_end = fourth_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1] 
+                    elif(self.new_down == 5)     
+                        self.EP_end = -first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
 
         return float(self.EP_end) - float(self.EP_start)
 
