@@ -667,7 +667,7 @@ class Play (object):
             self.EP_start = fourth_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]    
 
 
-        if(self.down != None):
+        if(self.down != 0):
             if self.kicking_fgm :
                 self.EP_end = 3
 
@@ -698,7 +698,7 @@ class Play (object):
                         self.new_yardline = 20
                         self.new_yards_togo = 10
                     else:    
-                        self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds-self.passing_sk_yds+self.punting_yds-self.puntret_yds)
+                        self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds-self.passing_sk_yds+self.punting_yds-self.puntret_yds-self.kicking_fgmissed_yds)
                         self.new_yards_togo = self.yards_togo-self.passing_yds-self.rushing_yds+self.passing_sk_yds
                      
                     if(self.new_down == 2):
@@ -710,7 +710,19 @@ class Play (object):
                     else:
                         
                         self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
-
+        else:
+            if(self.kicking_xpa):
+                self.EP_start = 6.95
+                if(self.kicking_xpmade):
+                    self.EP_end = 7
+                else:
+                    self.EP_end = 6  
+            if(self.kicking_tot and not self.kicking_touchback):
+                if self.kickret_tds:
+                    self.EP_end = -6.95
+                else:    
+                    self.new_yardline = 35+self.kicking_yds-self.kickret_yds
+                    self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
         return float(self.EP_end) - float(self.EP_start)
 
 
@@ -721,7 +733,12 @@ class Play (object):
                        % (self.team, self.data['yrdln'], self.time.qtr,
                           self.down, self.yards_togo, self.desc, self.EPA)
             else:
-                return '(%s, %s, Q%d) %s' \
+                if self.kicking_tot or self.kicking_xpa:
+                    return '(%s, %s, Q%d) %s EPA = %f' \
+                       % (self.team, self.data['yrdln'], self.time.qtr,
+                          self.desc,  self.EPA)
+                else:    
+                    return '(%s, %s, Q%d) %s' \
                        % (self.team, self.data['yrdln'], self.time.qtr,
                           self.desc)
         return self.desc
