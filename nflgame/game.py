@@ -708,7 +708,7 @@ class Play (object):
                         self.new_yardline = 20
                         self.new_yards_togo = 10
                     else:    
-                        self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds-self.passing_sk_yds+self.punting_yds-self.puntret_yds-self.kicking_fgmissed_yds)
+                        self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds+self.passing_sk_yds+self.punting_yds-self.puntret_yds-self.kicking_fgmissed_yds)
                         self.new_yards_togo = self.yards_togo-self.passing_yds-self.rushing_yds+self.passing_sk_yds
                      
                     if(self.new_down == 2):
@@ -718,7 +718,6 @@ class Play (object):
                     elif(self.new_down == 4):
                         self.EP_end = fourth_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1] 
                     else:
-                        
                         self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
         else:
             if(self.kicking_xpa):
