@@ -678,8 +678,18 @@ class Play (object):
                     self.EP_end = 6.95
 
             elif self.defense_safe:
-                 self.EP_end = -2 - first_down_EPA_list[25-1][10-1]
-
+                 self.EP_end = -2 - float(first_down_EPA_list[25-1][10-1])
+            elif(self.penalty):
+                self.new_yardline = int(50+self.yardline.offset-self.penalty_yds)
+                self.new_yards_togo = self.yards_togo+self.penalty_yds
+                if(self.down == 1):
+                    self.EP_end = first_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]
+                elif(self.down == 2):
+                    self.EP_end = second_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]    
+                elif(self.down == 3):
+                    self.EP_end = third_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1] 
+                else:
+                    self.EP_end = fourth_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]    
             else:
                 if(self.first_down):
                     self.new_down = 1
