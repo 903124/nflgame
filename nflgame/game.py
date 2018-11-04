@@ -653,18 +653,18 @@ class Play (object):
         
         if(self.down == 1): #iniialize starting EPA
 
-            self.EP_start = first_down_EPA_list[int(50-self.yardline.offset)-1][max(int(self.yards_togo)-1,29)]
+            self.EP_start = first_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]
 
         elif(self.down == 2):
 
-            self.EP_start = second_down_EPA_list[int(50-self.yardline.offset)-1][max(int(self.yards_togo)-1,29)]
+            self.EP_start = second_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]
 
         elif(self.down == 3):
 
-            self.EP_start = third_down_EPA_list[int(50-self.yardline.offset)-1][max(int(self.yards_togo)-1,29)]
+            self.EP_start = third_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]
         elif(self.down == 4):
 
-            self.EP_start = fourth_down_EPA_list[int(50-self.yardline.offset)-1][max(int(self.yards_togo)-1,29)]    
+            self.EP_start = fourth_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]    
 
 
         if(self.down != None):
@@ -672,37 +672,44 @@ class Play (object):
                 self.EP_end = 3
 
             elif self.touchdown:
-                if self.passing_tds or self.rushing_tds:
-                    self.EP_end = 6.95
-                else:
+                if self.defense_misc_tds or self.defense_frec_tds or self.defense_int_tds:
                     self.EP_end = -6.95
+                else:
+                    self.EP_end = 6.95
 
             elif self.defense_safe:
                  self.EP_end = -2 - first_down_EPA_list[25-1][10-1]
 
             else:
                 if(self.first_down):
+                    self.new_down = 1
                     self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds)
                     self.EP_end = first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
 
                 elif(self.fumbles_lost or self.defense_int): #turnover
-                    self.new_yardline = int(50-self.yardline.offset-self.passing_incmp_air_yds-self.rushing_yds+self.fumbles_rec_yds+self.defense_int_yds)
+                    self.new_down = 1
+                    self.new_yardline = int(50+self.yardline.offset+self.passing_incmp_air_yds+self.rushing_yds-self.fumbles_rec_yds-self.defense_int_yds)   
                     if(self.new_yardline <= 0): #touchback
                         self.new_yardline = 20
-                    self.EP_end = -float(first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]) 
-
+                    self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
                 else:
                     self.new_down = self.down + 1
-                    self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds-self.passing_sk_yds+self.punting_yds-self.puntret_yds)
-                    self.yards_togo = min(100-self.new_yardline,self.yards_togo+self.passing_yds+self.rushing_yds-self.passing_sk_yds)
+                    if(self.punting_touchback):
+                        self.new_yardline = 20
+                        self.new_yards_togo = 10
+                    else:    
+                        self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds-self.passing_sk_yds+self.punting_yds-self.puntret_yds)
+                        self.new_yards_togo = self.yards_togo-self.passing_yds-self.rushing_yds+self.passing_sk_yds
+                     
                     if(self.new_down == 2):
-                        self.EP_end = second_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+                        self.EP_end = second_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]
                     elif(self.new_down == 3):
-                        self.EP_end = third_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+                        self.EP_end = third_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]
                     elif(self.new_down == 4):
-                        self.EP_end = fourth_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1] 
-                    elif(self.new_down == 5)     
-                        self.EP_end = -first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+                        self.EP_end = fourth_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1] 
+                    else:
+                        
+                        self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
 
         return float(self.EP_end) - float(self.EP_start)
 
