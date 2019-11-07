@@ -308,10 +308,7 @@ def run():
     if args.json_update_file is None:
         args.json_update_file = nflgame.player._player_json_file
     teams = [team[0] for team in nflgame.teams if (team[0] != 'STL' and team[0] != 'SD') ]
-    
     teams = [team.replace('JAC', 'JAX') for team in teams]
-
-
     pool = multiprocessing.pool.ThreadPool(args.simultaneous_reqs)
 
     # Before doing anything laborious, make sure we have write access to
@@ -401,7 +398,6 @@ def run():
     def fetch(team):
         return team, roster_soup(team)
     for i, (team, soup) in enumerate(pool.imap(fetch, teams), 1):
-        print(team)
         progress(i, len(teams))
 
         if soup is None:
