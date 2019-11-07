@@ -194,6 +194,7 @@ def meta_from_profile_html(html):
     try:
         soup = BeautifulSoup(html, PARSER)
         pinfo = soup.find(id='player-bio').find(class_='player-info')
+        
         # Get the full name and split it into first and last.
         # Assume that if there are no spaces, then the name is the last name.
         # Otherwise, all words except the last make up the first name.
