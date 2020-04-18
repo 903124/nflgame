@@ -83,11 +83,12 @@ We tend to respond fairly quickly!
 import itertools
 
 import sys
+from functools import reduce
 
-if sys.version_info[:2] != (2, 7):
-    print("nflgame requires Python 2.7 and does not yet work with Python 3")
-    print("You are running Python version {}.{}".format(
-        sys.version_info.major, sys.version_info.minor))
+if sys.version_info.major != 3:
+    print("nflgame-redux requires Python 3 and not longer works with Python 2.7")
+    print(("You are running Python version {}.{}".format(
+        sys.version_info.major, sys.version_info.minor)))
     sys.exit(1)
 
 import nflgame.game  # noqa
@@ -96,8 +97,6 @@ import nflgame.player  # noqa
 import nflgame.sched  # noqa
 import nflgame.seq  # noqaj
 from nflgame.version import __version__  # noqa
-
-VERSION = __version__  # Deprecated. Backwards compatibility.
 
 NoPlayers = nflgame.seq.GenPlayerStats(None)
 """
@@ -164,7 +163,7 @@ def find(name, team=None):
     If team is not None, it is used as an additional search constraint.
     """
     hits = []
-    for player in players.itervalues():
+    for player in players.values():
         if player.name.lower() == name.lower():
             if team is None or team.lower() == player.team.lower():
                 hits.append(player)
@@ -269,7 +268,7 @@ def games_gen(year, week=None, home=None, away=None,
 
     def gen():
         for info in infos:
-            g = nflgame.game.Game(info['eid'])
+            g = nflgame.game.Game(**info)
             if g is None:
                 continue
             yield g
@@ -317,7 +316,7 @@ def one(year, week, home, away, kind='REG', started=False):
     if not infos:
         return None
     assert len(infos) == 1, 'More than one game matches the given criteria.'
-    return nflgame.game.Game(infos[0]['eid'])
+    return nflgame.game.Game(**infos[0])
 
 
 def combine(games, plays=False):
@@ -402,8 +401,8 @@ def combine_plays(games):
     return nflgame.seq.GenPlays(chain)
 
 
-def _search_schedule(year, week=None, home=None, away=None, kind='REG',
-                     started=False):
+def _search_schedule(year=None, week=None, home=None, away=None, kind='REG',
+                     started=False, eid=None):
     """
     Searches the schedule to find the game identifiers matching the criteria
     given.
@@ -432,9 +431,16 @@ def _search_schedule(year, week=None, home=None, away=None, kind='REG',
     (as opposed to waiting for a 404 error from NFL.com).
     """
     infos = []
-    for info in nflgame.sched.games.itervalues():
+    for info in nflgame.sched.games.values():
         y, t, w = info['year'], info['season_type'], info['week']
         h, a = info['home'], info['away']
+        if eid is not None:
+            if eid == info['eid']:
+                # Always return a non-array if eid is a match
+                return info
+            else:
+                # if eid is supplied and doesn't match, skip
+                continue
         if year is not None:
             if isinstance(year, list) and y not in year:
                 continue
@@ -460,5 +466,6 @@ def _search_schedule(year, week=None, home=None, away=None, kind='REG',
             now = nflgame.live._now()
             if gametime > now and (gametime - now).total_seconds() > 300:
                 continue
+
         infos.append(info)
     return infos

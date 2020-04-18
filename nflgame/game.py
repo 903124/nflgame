@@ -5,17 +5,33 @@ import gzip
 import json
 import socket
 import sys
-import urllib2
-import csv
+import datetime
 import time
+import logging
+import urllib.request, urllib.error, urllib.parse
 from collections import OrderedDict
+import csv
 
 import nflgame.player
 import nflgame.sched
 import nflgame.seq
 import nflgame.statmap
+import nflgame.live
 
-_MAX_INT = sys.maxint
+try:
+    import pytz
+except ImportError:
+    pass
+
+
+log_level = os.getenv("NFLGAME_LOG_LEVEL", '')
+logging.basicConfig()
+logger = logging.getLogger('nflgame')
+
+if log_level == "INFO":
+    logger.root.setLevel(logging.INFO)
+
+_MAX_INT = sys.maxsize
 
 _jsonf = path.join(path.split(__file__)[0], 'gamecenter-json', '%s.json.gz')
 _json_base_url = "http://www.nfl.com/liveupdate/game-center/%s/%s_gtd.json"
@@ -25,16 +41,16 @@ _second_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_seco
 _third_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_third.csv')
 _fourth_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_fourth.csv')
 
-with open(_first_down_EPA_url, 'rb') as f:
+with open(_first_down_EPA_url, 'r') as f:
     reader = csv.reader(f)
     first_down_EPA_list = list(reader)
-with open(_second_down_EPA_url, 'rb') as f:
+with open(_second_down_EPA_url, 'r') as f:
     reader = csv.reader(f)
     second_down_EPA_list = list(reader)
-with open(_third_down_EPA_url, 'rb') as f:
+with open(_third_down_EPA_url, 'r') as f:
     reader = csv.reader(f)
     third_down_EPA_list = list(reader)
-with open(_fourth_down_EPA_url, 'rb') as f:
+with open(_fourth_down_EPA_url, 'r') as f:
     reader = csv.reader(f)
     fourth_down_EPA_list = list(reader)    
 
@@ -55,15 +71,12 @@ TeamStats = namedtuple('TeamStats',
 class FieldPosition (object):
     """
     Represents field position.
-
     The representation here is an integer offset where the 50 yard line
     corresponds to '0'. Being in the own territory corresponds to a negative
     offset while being in the opponent's territory corresponds to a positive
     offset.
-
     e.g., NE has the ball on the NE 45, the offset is -5.
     e.g., NE has the ball on the NYG 2, the offset is 48.
-
     This representation allows for gains in any particular play to be added
     to the field offset to get the new field position as the result of the
     play.
@@ -77,7 +90,6 @@ class FieldPosition (object):
         """
         pos_team is the team on offense, and yardline is a string formatted
         like 'team-territory yard-line'. e.g., "NE 32".
-
         An offset can be given directly by specifying an integer for offset.
         """
         if isinstance(offset, int):
@@ -124,7 +136,7 @@ class PossessionTime (object):
         self.clock = clock
 
         try:
-            self.minutes, self.seconds = map(int, self.clock.split(':'))
+            self.minutes, self.seconds = list(map(int, self.clock.split(':')))
         except ValueError:
             self.minutes, self.seconds = 0, 0
 
@@ -134,9 +146,23 @@ class PossessionTime (object):
         """
         return self.seconds + self.minutes * 60
 
-    def __cmp__(self, other):
-        a, b = (self.minutes, self.seconds), (other.minutes, other.seconds)
-        return cmp(a, b)
+    def __lt__(self, other):
+        return self.total_seconds() < other.total_seconds()
+
+    def __gt__(self, other):
+        return self.total_seconds() > other.total_seconds()
+
+    def __eq__(self,other):
+        return self.total_seconds() == other.total_seconds()
+
+    def __ge__(self,other):
+        return self.total_seconds() >= other.total_seconds()
+    
+    def __le__(self,other):
+        return self.total_seconds() <= other.total_seconds()
+    
+    def __eq__(self,other):
+        return self.total_seconds() == other.total_seconds()
 
     def __add__(self, other):
         new_time = PossessionTime('0:00')
@@ -170,7 +196,7 @@ class GameClock (object):
         self.clock = clock
 
         try:
-            self._minutes, self._seconds = map(int, self.clock.split(':'))
+            self._minutes, self._seconds = list(map(int, self.clock.split(':')))
         except ValueError:
             self._minutes, self._seconds = 0, 0
         except AttributeError:
@@ -185,21 +211,14 @@ class GameClock (object):
             elif self.is_halftime():
                 self.__qtr = 3
             elif self.is_final():
-                self.__qtr = sys.maxint
+                self.__qtr = sys.maxsize
             else:
                 self.qtr = 'Pregame'
 
+    
     @property
     def quarter(self):
         return self.__qtr
-
-    @property
-    def minute(self):
-        return self._minutes
-
-    @property
-    def second(self):
-        return self._seconds
 
     @quarter.setter
     def quarter(self, value):
@@ -220,12 +239,26 @@ class GameClock (object):
     def is_final(self):
         return 'final' in self.qtr.lower()
 
-    def __cmp__(self, other):
-        if self.__qtr != other.__qtr:
-            return cmp(self.__qtr, other.__qtr)
-        elif self._minutes != other._minutes:
-            return cmp(other._minutes, self._minutes)
-        return cmp(other._seconds, self._seconds)
+    def elapsed_time(self):
+        return self.__qtr -1 * 15 * 60 + (self._minutes * 60) + self._seconds
+
+    def __lt__(self, other):
+        return self.elapsed_time() < other.elapsed_time()
+
+    def __gt__(self, other):
+        return self.elapsed_time() > other.elapsed_time()
+
+    def __eq__(self, other):
+        return self.elapsed_time() == other.elapsed_time()
+
+    def __ge__(self, other):
+        return self.elapsed_time() >= other.elapsed_time()
+
+    def __le__(self, other):
+        return self.elapsed_time() <= other.elapsed_time()
+
+    def __eq__(self, other):
+        return self.elapsed_time() == other.elapsed_time()
 
     def __str__(self):
         """
@@ -247,47 +280,78 @@ class Game (object):
     the winner of the game, the score and a list of all the scoring plays.
     """
 
-    def __new__(cls, eid=None, fpath=None):
-        # If we can't get a valid JSON data, exit out and return None.
-        try:
-            rawData = _get_json_data(eid, fpath)
-        except urllib2.URLError:
-            return None
-        if rawData is None or rawData.strip() == '{}':
-            return None
-        game = object.__new__(cls)
-        game.rawData = rawData
+    def __new__(cls, eid=None, fpath=None, **kwargs):
+        logger.info("EID: {}".format(eid))
+        if eid is not None:
+            game_starting_soon, schedule_info = _infer_gc_json_available(eid)
 
-        try:
-            if eid is not None:
-                game.eid = eid
-                game.data = json.loads(game.rawData)[game.eid]
-            else:  # For when we have rawData (fpath) and no eid.
-                game.eid = None
-                game.data = json.loads(game.rawData)
-                for k, v in game.data.iteritems():
-                    if isinstance(v, dict):
-                        game.eid = k
-                        game.data = v
-                        break
-                assert game.eid is not None
-        except ValueError:
-            return None
+        if game_starting_soon:
+            try:
+                rawData = _get_json_data(eid, fpath)
+            except urllib.error.URLError:
+                # @TODO - find when this happens, likely never as ln# 868 catches
+                # 404 errors and returns None
+                return None
+        else:
+            if len(schedule_info) == 0:
+                # No game was found in the schedule
+                return None
+
+            gameData = {
+                'home': {
+                    'abbr': schedule_info['home'],
+                    'score': {
+                        'T': 0
+                    }
+                },
+                'away': {
+                    'abbr': schedule_info['away'],
+                    'score': {
+                        'T': 0
+                    }
+                },
+                "gamekey": schedule_info['gamekey'],
+                "qtr": 'Pregame',
+                "gcJsonAvailable": False,
+                "clock": 0
+            }
+
+        game = object.__new__(cls)
+
+        # IF the game isn't starting dump what schedule data we have
+        if not game_starting_soon:
+            game.data = gameData
+            game.eid = eid
+        else:
+            game.rawData = rawData
+            try:
+                if eid is not None:
+                    game.eid = eid
+                    game.data = json.loads(game.rawData.decode('utf-8'))[game.eid]
+                else:  # For when we have rawData (fpath) and no eid.
+                    game.eid = None
+                    game.data = json.loads(game.rawData.decode('utf-8'))
+                    for k, v in game.data.items():
+                        if isinstance(v, dict):
+                            game.eid = k
+                            game.data = v
+                            break
+                    assert game.eid is not None
+                game.data['gcJsonAvailable'] = True
+            except ValueError:
+                return None
 
         return game
 
-    def __init__(self, eid=None, fpath=None):
+    def __init__(self, eid=None, fpath=None, **kwargs):
         """
         Creates a new Game instance given a game identifier.
-
         The game identifier is used by NFL.com's GameCenter live update web
         pages. It is used to construct a URL to download JSON data for the
         game.
-
         If the game has been completed, the JSON data will be cached to disk
         so that subsequent accesses will not re-download the data but instead
         read it from disk.
-
         When the JSON data is written to disk, it is compressed using gzip.
         """
         # Make the schedule info more accessible.
@@ -296,45 +360,48 @@ class Game (object):
         # Home and team cumulative statistics.
         self.home = self.data['home']['abbr']
         self.away = self.data['away']['abbr']
-        self.stats_home = _json_team_stats(self.data['home']['stats']['team'])
-        self.stats_away = _json_team_stats(self.data['away']['stats']['team'])
-
-        # Load up some simple static values.
         self.gamekey = nflgame.sched.games[self.eid]['gamekey']
         self.time = GameClock(self.data['qtr'], self.data['clock'])
-        self.down = _tryint(self.data['down'])
-        self.togo = _tryint(self.data['togo'])
         self.score_home = int(self.data['home']['score']['T'])
         self.score_away = int(self.data['away']['score']['T'])
-        for q in (1, 2, 3, 4, 5):
-            for team in ('home', 'away'):
-                score = self.data[team]['score'][str(q)]
-                self.__dict__['score_%s_q%d' % (team, q)] = int(score)
+        self.gcJsonAvailable = self.data['gcJsonAvailable']
 
-        if not self.game_over():
-            self.winner = None
-        else:
-            if self.score_home > self.score_away:
-                self.winner = self.home
-                self.loser = self.away
-            elif self.score_away > self.score_home:
-                self.winner = self.away
-                self.loser = self.home
+        if(self.data['gcJsonAvailable']):
+            self.stats_home = _json_team_stats(self.data['home']['stats']['team'])
+            self.stats_away = _json_team_stats(self.data['away']['stats']['team'])
+
+            # Load up some simple static values.
+            self.down = _tryint(self.data['down'])
+            self.togo = _tryint(self.data['togo'])
+            for q in (1, 2, 3, 4, 5):
+                for team in ('home', 'away'):
+                    score = self.data[team]['score'][str(q)]
+                    self.__dict__['score_%s_q%d' % (team, q)] = int(score)
+
+            if not self.game_over():
+                self.winner = None
             else:
-                self.winner = '%s/%s' % (self.home, self.away)
-                self.loser = '%s/%s' % (self.home, self.away)
+                if self.score_home > self.score_away:
+                    self.winner = self.home
+                    self.loser = self.away
+                elif self.score_away > self.score_home:
+                    self.winner = self.away
+                    self.loser = self.home
+                else:
+                    self.winner = '%s/%s' % (self.home, self.away)
+                    self.loser = '%s/%s' % (self.home, self.away)
 
-        # Load the scoring summary into a simple list of strings.
-        self.scores = []
-        for k in sorted(map(int, self.data['scrsummary'])):
-            play = self.data['scrsummary'][str(k)]
-            s = '%s - Q%d - %s - %s' \
-                % (play['team'], play['qtr'], play['type'], play['desc'])
-            self.scores.append(s)
+            # Load the scoring summary into a simple list of strings.
+            self.scores = []
+            for k in sorted(map(int, self.data['scrsummary'])):
+                play = self.data['scrsummary'][str(k)]
+                s = '%s - Q%d - %s - %s' \
+                    % (play['team'], play['qtr'], play['type'], play['desc'])
+                self.scores.append(s)
 
         # Check to see if the game is over, and if so, cache the data.
         if self.game_over() and not os.access(_jsonf % eid, os.R_OK):
-            self.save()
+             self.save()
 
     def is_home(self, team):
         """Returns true if team (i.e., 'NE') is the home team."""
@@ -364,11 +431,12 @@ class Game (object):
         if fpath is None:
             fpath = _jsonf % self.eid
         try:
-            print >> gzip.open(fpath, 'w+'), self.rawData,
+            with gzip.open(fpath, 'w+') as outfile:
+                outfile.write(self.rawData)
         except IOError:
-            print >> sys.stderr, "Could not cache JSON data. Please " \
+            logger.info("Could not cache JSON data. Please " \
                                  "make '%s' writable." \
-                                 % os.path.dirname(fpath)
+                                 % os.path.dirname(fpath), file=sys.stderr)
 
     def nice_score(self):
         """
@@ -383,15 +451,15 @@ class Game (object):
         Returns a GenPlayers sequence of player statistics that combines
         game statistics and play statistics by taking the max value of
         each corresponding statistic.
-
         This is useful when accuracy is desirable. Namely, using only
         play-by-play data or using only game statistics can be unreliable.
         That is, both are inconsistently correct.
-
         Taking the max values of each statistic reduces the chance of being
         wrong (particularly for stats that are in both play-by-play data
         and game statistics), but does not eliminate them.
         """
+        if not self.gcJsonAvailable:
+            return {}
         game_players = list(self.players)
         play_players = list(self.drives.plays().players())
         max_players = OrderedDict()
@@ -406,19 +474,19 @@ class Game (object):
                                                   pplay.name, pplay.home,
                                                   pplay.team)
             maxstats = {}
-            for stat, val in pplay._stats.iteritems():
+            for stat, val in pplay._stats.items():
                 maxstats[stat] = val
 
             newp._overwrite_stats(maxstats)
             max_players[pplay.playerid] = newp
 
-        for newp in max_players.itervalues():
+        for newp in max_players.values():
             for pgame in game_players:
                 if pgame.playerid != newp.playerid:
                     continue
 
                 maxstats = {}
-                for stat, val in pgame._stats.iteritems():
+                for stat, val in pgame._stats.items():
                     maxstats[stat] = max([val,
                                           newp._stats.get(stat, -_MAX_INT)])
 
@@ -450,7 +518,6 @@ def diff(before, after):
     plays and player statistics. The return value is a GameDiff namedtuple
     with two attributes: plays and players. Each contains *only* the data
     that is in the after game but not in the before game.
-
     This is useful for sending alerts where you're guaranteed to see each
     play statistic only once (assuming NFL.com behaves itself).
     """
@@ -518,7 +585,7 @@ class Drive (object):
             self.field_end = FieldPosition(self.team, data['end']['yrdln'])
         else:
             self.field_end = None
-            playids = sorted(map(int, data['plays'].keys()), reverse=True)
+            playids = sorted(map(int, list(data['plays'].keys())), reverse=True)
             for pid in playids:
                 yrdln = data['plays'][str(pid)]['yrdln'].strip()
                 if yrdln:
@@ -533,8 +600,8 @@ class Drive (object):
         # seem to always work.)
         # lastplayid = str(max(map(int, data['plays'].keys())))
         # endqtr = data['plays'][lastplayid]['qtr']
-        qtrs = [p['qtr'] for p in data['plays'].values()]
-        maxq = str(max(map(int, qtrs)))
+        qtrs = [p['qtr'] for p in list(data['plays'].values())]
+        maxq = str(max(list(map(int, qtrs))))
         self.time_end = GameClock(maxq, data['end']['time'])
 
         # One last sanity check. If the end time is less than the start time,
@@ -551,7 +618,6 @@ class Drive (object):
     def __add__(self, other):
         """
         Adds the statistics of two drives together.
-
         Note that once two drives are added, the following fields
         automatically get None values: result, field_start, field_end,
         time_start and time_end.
@@ -586,7 +652,6 @@ class Play (object):
     that participated in the play (including offense, defense and special
     teams). The play also includes meta information about what down it
     is, field position, clock time, etc.
-
     Play objects also contain team-level statistics, such as whether the
     play was a first down, a fourth down failure, etc.
     """
@@ -602,15 +667,13 @@ class Play (object):
         self.yards_togo = int(data['ydstogo'])
         self.touchdown = 'touchdown' in self.desc.lower()
         self._stats = {}
-        self.EP_start = 0
-        self.EP_end = 0
 
         if not self.team:
             self.time, self.yardline = None, None
         else:
             self.time = GameClock(data['qtr'], data['time'])
             self.yardline = FieldPosition(self.team, data['yrdln'])
-            
+
         # Load team statistics directly into the Play instance.
         # Things like third down attempts, first downs, etc.
         if '0' in data['players']:
@@ -619,9 +682,9 @@ class Play (object):
                     continue
                 statvals = nflgame.statmap.values(info['statId'],
                                                   info['yards'])
-                for k, v in statvals.iteritems():
+                for k, v in statvals.items():
                     v = self.__dict__.get(k, 0) + v
-                    self.__dict__[k] = v
+                    self.__dict__[k] = v 
                     self._stats[k] = v
 
         # Load the sequence of "events" in a play into a list of dictionaries.
@@ -634,7 +697,7 @@ class Play (object):
         self.__players = _json_play_players(self, data['players'])
         self.players = nflgame.seq.GenPlayerStats(self.__players)
         for p in self.players:
-            for k, v in p.stats.iteritems():
+            for k, v in p.stats.items():
                 # Sometimes we may see duplicate statistics (like tackle
                 # assists). Let's just overwrite in this case, since this
                 # data is from the perspective of the play. i.e., there
@@ -652,33 +715,30 @@ class Play (object):
 
         
         if(self.down == 1): #iniialize starting EPA
-
             self.EP_start = first_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]
 
         elif(self.down == 2):
-
             self.EP_start = second_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]
 
         elif(self.down == 3):
-
             self.EP_start = third_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]
-        elif(self.down == 4):
 
+        elif(self.down == 4):
             self.EP_start = fourth_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]    
 
 
         if(self.down != 0):
-            if self.kicking_fgm :
+            if self.kicking_fgm : #Field goal worth 3 points
                 self.EP_end = 3
 
             elif self.touchdown:
                 if self.defense_misc_tds or self.defense_frec_tds or self.defense_int_tds:
-                    self.EP_end = -6.95
+                    self.EP_end = -6.95 #Touchdown worth 6 points and ~95% to convert extra point
                 else:
                     self.EP_end = 6.95
 
             elif self.defense_safe:
-                 self.EP_end = -2 - float(first_down_EPA_list[25-1][10-1])
+                 self.EP_end = -2 - float(first_down_EPA_list[25-1][10-1]) #Safety give up 2 points to opponent plus a punt kickoff
             elif(self.penalty):
                 self.new_yardline = int(50+self.yardline.offset-self.penalty_yds)
                 self.new_yards_togo = self.yards_togo+self.penalty_yds
@@ -699,13 +759,13 @@ class Play (object):
                 elif(self.fumbles_lost or self.defense_int): #turnover
                     self.new_down = 1
                     self.new_yardline = int(50+self.yardline.offset+self.passing_incmp_air_yds+self.rushing_yds-self.fumbles_rec_yds-self.defense_int_yds)   
-                    if(self.new_yardline <= 0): #touchback
+                    if(self.new_yardline <= 0): #touchback occur when the ball is down in opponent endzone after turnover, and the ball is put on 20 yard line in the next play
                         self.new_yardline = 20
                     self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
                 else:
                     self.new_down = self.down + 1
                     if(self.punting_touchback):
-                        self.new_yardline = 20
+                        self.new_yardline = 20 #touchback occur when the ball is down in opponent endzone after punt, and the ball is put on 20 yard line in the next play
                         self.new_yards_togo = 10
                     else:    
                         self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds+self.passing_sk_yds+self.punting_yds-self.puntret_yds-self.kicking_fgmissed_yds)
@@ -732,22 +792,16 @@ class Play (object):
                 else:    
                     self.new_yardline = 35+self.kicking_yds-self.kickret_yds
                     self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
-        return float(self.EP_end) - float(self.EP_start)
-
+        return round(float(self.EP_end) - float(self.EP_start),2)
 
     def __str__(self):
         if self.team:
             if self.down != 0:
-                return '(%s, %s, Q%d, %d and %d) %s EPA = %f' \
+                return '(%s, %s, Q%d, %d and %d) %s' \
                        % (self.team, self.data['yrdln'], self.time.qtr,
-                          self.down, self.yards_togo, self.desc, self.EPA)
+                          self.down, self.yards_togo, self.desc)
             else:
-                if self.kicking_tot or self.kicking_xpa:
-                    return '(%s, %s, Q%d) %s EPA = %f' \
-                       % (self.team, self.data['yrdln'], self.time.qtr,
-                          self.desc,  self.EPA)
-                else:    
-                    return '(%s, %s, Q%d) %s' \
+                return '(%s, %s, Q%d) %s' \
                        % (self.team, self.data['yrdln'], self.time.qtr,
                           self.desc)
         return self.desc
@@ -764,9 +818,6 @@ class Play (object):
             raise AttributeError
         return 0
 
-
-
-        
 
 def _json_team_stats(data):
     """
@@ -830,12 +881,11 @@ def _json_play_players(play, data):
     """
     Takes a single JSON play entry (data) and converts it to an OrderedDict
     of player statistics.
-
     play is the instance of Play that this data is part of. It is used
     to determine whether the player belong to the home team or not.
     """
     players = OrderedDict()
-    for playerid, statcats in data.iteritems():
+    for playerid, statcats in data.items():
         if playerid == '0':
             continue
         for info in statcats:
@@ -861,7 +911,7 @@ def _json_play_events(data):
     Takes a single JSON play entry (data) and converts it to a list of events.
     """
     temp = list()
-    for playerid, statcats in data.iteritems():
+    for playerid, statcats in data.items():
         for info in statcats:
             if info['statId'] not in nflgame.statmap.idmap:
                 continue
@@ -884,9 +934,9 @@ def _json_game_player_stats(game, data):
         for category in nflgame.statmap.categories:
             if category not in data[team]['stats']:
                 continue
-            for pid, raw in data[team]['stats'][category].iteritems():
+            for pid, raw in data[team]['stats'][category].items():
                 stats = {}
-                for k, v in raw.iteritems():
+                for k, v in raw.items():
                     if k == 'name':
                         continue
                     stats['%s_%s' % (category, k)] = v
@@ -907,12 +957,9 @@ def _json_game_player_stats(game, data):
 def _get_json_data(eid=None, fpath=None):
     """
     Returns the JSON data corresponding to the game represented by eid.
-
     If the JSON data is already on disk, it is read, decompressed and returned.
-
     Otherwise, the JSON data is downloaded from the NFL web site. If the data
     doesn't exist yet or there was an error, _get_json_data returns None.
-
     If eid is None, then the JSON data is read from the file at fpath.
     """
     assert eid is not None or fpath is not None
@@ -922,14 +969,40 @@ def _get_json_data(eid=None, fpath=None):
 
     fpath = _jsonf % eid
     if os.access(fpath, os.R_OK):
+        logger.info("_get_json_data: json cache found, returning cached data ")
         return gzip.open(fpath).read()
     try:
-        return urllib2.urlopen(_json_base_url % (eid, eid), timeout=5).read()
-    except urllib2.HTTPError:
+        logger.info("_get_json_data: firing request")
+        return urllib.request.urlopen(_json_base_url % (eid, eid), timeout=5).read()
+    except urllib.error.HTTPError:
         pass
     except socket.timeout:
         pass
+
+    logger.info("_get_json_data: Failed request, returning None")
     return None
+
+
+def _infer_gc_json_available(eid):
+    """
+    Check to see if the game-center json even has a chance to be available, i.e.
+    the game starts in <= 10 minutes.  This is used to prevent superfluous calls 
+    to the nfl api.
+    returns a tuple - True/False if the game is about to start and the schedule data
+    """
+    logger.info("Checking to see if the game exists in the schedule")
+    schedule_info = nflgame._search_schedule(eid=eid)
+    if len(schedule_info) == 0:
+        logger.info("No game found")
+        #No game found
+        return False, []
+
+    gametime = nflgame.live._game_datetime(schedule_info)
+    now = nflgame.live._now()
+
+    game_starting_soon = (gametime - now).total_seconds() <= 600
+    logger.info("Game Starting Soon Check: {}".format(game_starting_soon))
+    return  game_starting_soon, schedule_info
 
 
 def _tryint(v):

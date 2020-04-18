@@ -1,10 +1,10 @@
-from __future__ import absolute_import, division, print_function
+
 import argparse
 import time
 import json
 import os
 import sys
-import urllib2
+import urllib.request, urllib.error, urllib.parse
 from collections import OrderedDict
 import xml.dom.minidom as xml
 
@@ -14,9 +14,9 @@ import nflgame
 def year_phase_week(year=None, phase=None, week=None):
     cur_year, _ = nflgame.live.current_year_and_week()
     season_types = (
-        ('PRE', xrange(0, 4 + 1)),
-        ('REG', xrange(1, 17 + 1)),
-        ('POST', xrange(1, 4 + 1)),
+        ('PRE', range(0, 4 + 1)),
+        ('REG', range(1, 17 + 1)),
+        ('POST', range(1, 4 + 1)),
     )
     for y in range(2009, cur_year+1):
         if year is not None and year != y:
@@ -54,8 +54,8 @@ def week_schedule(year, stype, week):
     """
     url = schedule_url(year, stype, week)
     try:
-        dom = xml.parse(urllib2.urlopen(url))
-    except urllib2.HTTPError:
+        dom = xml.parse(urllib.request.urlopen(url))
+    except urllib.error.HTTPError:
         print >> sys.stderr, 'Could not load %s' % url
         return []
 

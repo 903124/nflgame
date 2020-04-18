@@ -28,7 +28,7 @@ def check_missing_weeks(sched, year, phase):
     missing_weeks = calc_desired_weeks(year, phase)
     stored_weeks = set()
 
-    for info in sched.itervalues():
+    for info in sched.values():
         if info['year'] != year:
             continue
         stored_week = (year, info['season_type'], info['week'])
@@ -62,7 +62,7 @@ def _create_schedule(jsonf=None):
     try:
         data = json.loads(open(jsonf).read())
     except IOError:
-        return OrderedDict()
+        return OrderedDict(), datetime.datetime.utcnow()
 
     sched = OrderedDict()
     for gsis_id, info in data.get('games', []):
@@ -82,12 +82,12 @@ def _create_schedule(jsonf=None):
             weeks_to_update = order_weeks_to_update(missing_weeks, current_week)
 
             for week_to_update in weeks_to_update:
-                print('Updating {}').format(week_to_update)
+                print(('Updating {}').format(week_to_update))
                 year, phase, week = week_to_update
                 week_was_updated = nflgame.update_sched.update_week(sched, year, phase, week)
                 if not week_was_updated:
-                    print("Week {}{} of {} was either empty, or it couldn't be fetched from NFL.com. Aborting.")\
-                        .format(phase , week, year)
+                    print(("Week {}{} of {} was either empty, or it couldn't be fetched from NFL.com. Aborting.")\
+                        .format(phase , week, year))
                     break
 
             nflgame.update_sched.write_schedule(jsonf, sched)

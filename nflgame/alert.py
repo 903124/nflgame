@@ -115,8 +115,8 @@ def google_voice_login(email, passwd):
     global _voice
 
     if not _gv_available:
-        print >> sys.stderr, "The pygooglevoice Python package is required " \
-                             "in order to use Google Voice."
+        print("The pygooglevoice Python package is required " \
+                             "in order to use Google Voice.", file=sys.stderr)
         return
 
     _voice = googlevoice.Voice()

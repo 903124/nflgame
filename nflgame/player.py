@@ -1,4 +1,4 @@
-from __future__ import division
+
 
 import json
 import os.path
@@ -72,8 +72,7 @@ class Player (object):
         plays = []
         games = nflgame.games(year, week)
         for g in games:
-            plays += filter(lambda p: p.has_player(self.playerid),
-                            list(g.drives.plays()))
+            plays += [p for p in list(g.drives.plays()) if p.has_player(self.playerid)]
         return nflgame.seq.GenPlays(plays)
 
     def __str__(self):
@@ -177,7 +176,7 @@ class PlayerStats (object):
         all statistical categories.
         """
         n = 0
-        for f, v in self.__dict__.iteritems():
+        for f, v in self.__dict__.items():
             if f.endswith('tds'):
                 n += v
         return n
@@ -224,17 +223,17 @@ class PlayerStats (object):
         Returns a roughly-formatted string of all statistics for this player.
         """
         s = []
-        for stat, val in self._stats.iteritems():
+        for stat, val in self._stats.items():
             s.append('%s: %s' % (stat, val))
         return ', '.join(s)
 
     def _add_stats(self, stats):
-        for k, v in stats.iteritems():
+        for k, v in stats.items():
             self.__dict__[k] = self.__dict__.get(k, 0) + v
             self._stats[k] = self.__dict__[k]
 
     def _overwrite_stats(self, stats):
-        for k, v in stats.iteritems():
+        for k, v in stats.items():
             self.__dict__[k] = v
             self._stats[k] = self.__dict__[k]
 
@@ -278,7 +277,7 @@ class PlayerStats (object):
         new_player = GamePlayerStats(self.playerid,
                                      self.name, self.home, self.team)
         new_player._add_stats(self._stats)
-        for bk, bv in other._stats.iteritems():
+        for bk, bv in other._stats.items():
             if bk not in new_player._stats:  # stat was taken away? ignore.
                 continue
 
@@ -289,7 +288,7 @@ class PlayerStats (object):
                 new_player.__dict__[bk] = new_player._stats[bk]
 
         anydiffs = False
-        for k, v in new_player._stats.iteritems():
+        for k, v in new_player._stats.items():
             if v > 0:
                 anydiffs = True
                 break

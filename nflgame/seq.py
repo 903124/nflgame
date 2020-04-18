@@ -77,9 +77,9 @@ class Gen (object):
         (Django users should feel right at home.)
         """
         preds = []
-        for k, v in kwargs.iteritems():
+        for k, v in kwargs.items():
             def pred(field, value, item):
-                for suffix, p in _BUILTIN_PREDS.iteritems():
+                for suffix, p in _BUILTIN_PREDS.items():
                     if field.endswith(suffix):
                         f = field[:field.index(suffix)]
                         if not hasattr(item, f) or getattr(item, f) is None:
@@ -92,7 +92,7 @@ class Gen (object):
                 return getattr(item, field) == value
             preds.append(functools.partial(pred, k, v))
 
-        gen = itertools.ifilter(lambda item: all([f(item) for f in preds]),
+        gen = filter(lambda item: all([f(item) for f in preds]),
                                 self)
         return self.__class__(gen)
 
@@ -125,7 +125,7 @@ class Gen (object):
         if self.__iter is None:
             return iter([])
         if isinstance(self.__iter, OrderedDict):
-            return self.__iter.itervalues()
+            return iter(self.__iter.values())
         return iter(self.__iter)
 
     def __reversed__(self):
@@ -143,7 +143,7 @@ class GenDrives (Gen):
         Returns all of the plays, in order, belonging to every drive in
         the sequence.
         """
-        return GenPlays(itertools.chain(*map(lambda d: d.plays, self)))
+        return GenPlays(itertools.chain(*[d.plays for d in self]))
 
     def players(self):
         """
@@ -240,7 +240,7 @@ class GenPlayerStats (Gen):
         return self.__class__(gen())
 
     def __filter_category(self, cat):
-        return self.__class__(itertools.ifilter(lambda p: p.has_cat(cat),
+        return self.__class__(filter(lambda p: p.has_cat(cat),
                                                 self))
 
     def passing(self):
@@ -302,10 +302,10 @@ class GenPlayerStats (Gen):
         fields, rows = set([]), []
         players = list(self)
         for p in players:
-            for field, stat in p.stats.iteritems():
+            for field, stat in p.stats.items():
                 fields.add(field)
         if allfields:
-            for statId, info in statmap.idmap.iteritems():
+            for statId, info in statmap.idmap.items():
                 for field in info['fields']:
                     fields.add(field)
         fields = sorted(list(fields))
