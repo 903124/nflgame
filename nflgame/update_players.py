@@ -119,7 +119,7 @@ def gsis_id(profile_url):
 
 
 def roster_soup(team):
-    resp = requests.get(urls['roster'], params={'team':team})
+    resp = requests.get(urls['roster'], params={'team':team}, allow_redirects=False)
     if resp.status_code != 200:
         return None
     return BeautifulSoup(resp.text, PARSER)
@@ -308,7 +308,8 @@ def run():
 
     if args.json_update_file is None:
         args.json_update_file = nflgame.player._player_json_file
-    teams = [team[0] for team in nflgame.teams if team[0] != 'STL']
+    teams = [team[0] for team in nflgame.teams if (team[0] != 'STL' and team[0] != 'SD') ]
+    teams = [team.replace('JAC', 'JAX') for team in teams]
     pool = multiprocessing.pool.ThreadPool(args.simultaneous_reqs)
 
     # Before doing anything laborious, make sure we have write access to
