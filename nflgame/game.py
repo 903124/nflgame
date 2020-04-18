@@ -5,10 +5,16 @@ import gzip
 import json
 import socket
 import sys
+<<<<<<< HEAD
 import datetime
 import time
 import logging
 import urllib.request, urllib.error, urllib.parse
+=======
+import urllib2
+import csv
+import time
+>>>>>>> 2e1ec35f969f5492869f03edeb997ea41d75466f
 from collections import OrderedDict
 
 import nflgame.player
@@ -34,6 +40,24 @@ _MAX_INT = sys.maxsize
 
 _jsonf = path.join(path.split(__file__)[0], 'gamecenter-json', '%s.json.gz')
 _json_base_url = "http://www.nfl.com/liveupdate/game-center/%s/%s_gtd.json"
+
+_first_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_first.csv')
+_second_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_second.csv')
+_third_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_third.csv')
+_fourth_down_EPA_url = path.join(path.split(__file__)[0], 'EPA-model', 'EPA_fourth.csv')
+
+with open(_first_down_EPA_url, 'rb') as f:
+    reader = csv.reader(f)
+    first_down_EPA_list = list(reader)
+with open(_second_down_EPA_url, 'rb') as f:
+    reader = csv.reader(f)
+    second_down_EPA_list = list(reader)
+with open(_third_down_EPA_url, 'rb') as f:
+    reader = csv.reader(f)
+    third_down_EPA_list = list(reader)
+with open(_fourth_down_EPA_url, 'rb') as f:
+    reader = csv.reader(f)
+    fourth_down_EPA_list = list(reader)    
 
 GameDiff = namedtuple('GameDiff', ['before', 'after', 'plays', 'players'])
 """
@@ -204,6 +228,14 @@ class GameClock (object):
     @property
     def quarter(self):
         return self.__qtr
+
+    @property
+    def minute(self):
+        return self._minutes
+
+    @property
+    def second(self):
+        return self._seconds
 
     @quarter.setter
     def quarter(self, value):
@@ -660,13 +692,15 @@ class Play (object):
         self.yards_togo = int(data['ydstogo'])
         self.touchdown = 'touchdown' in self.desc.lower()
         self._stats = {}
+        self.EP_start = 0
+        self.EP_end = 0
 
         if not self.team:
             self.time, self.yardline = None, None
         else:
             self.time = GameClock(data['qtr'], data['time'])
             self.yardline = FieldPosition(self.team, data['yrdln'])
-
+            
         # Load team statistics directly into the Play instance.
         # Things like third down attempts, first downs, etc.
         if '0' in data['players']:
@@ -702,14 +736,108 @@ class Play (object):
         """Whether a player with id playerid participated in this play."""
         return playerid in self.__players
 
+
+    @property
+    def EPA(self):
+
+        
+        if(self.down == 1): #iniialize starting EPA
+
+            self.EP_start = first_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]
+
+        elif(self.down == 2):
+
+            self.EP_start = second_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]
+
+        elif(self.down == 3):
+
+            self.EP_start = third_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]
+        elif(self.down == 4):
+
+            self.EP_start = fourth_down_EPA_list[int(50+self.yardline.offset)-1][min(int(self.yards_togo)-1,30)-1]    
+
+
+        if(self.down != 0):
+            if self.kicking_fgm :
+                self.EP_end = 3
+
+            elif self.touchdown:
+                if self.defense_misc_tds or self.defense_frec_tds or self.defense_int_tds:
+                    self.EP_end = -6.95
+                else:
+                    self.EP_end = 6.95
+
+            elif self.defense_safe:
+                 self.EP_end = -2 - float(first_down_EPA_list[25-1][10-1])
+            elif(self.penalty):
+                self.new_yardline = int(50+self.yardline.offset-self.penalty_yds)
+                self.new_yards_togo = self.yards_togo+self.penalty_yds
+                if(self.down == 1):
+                    self.EP_end = first_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]
+                elif(self.down == 2):
+                    self.EP_end = second_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]    
+                elif(self.down == 3):
+                    self.EP_end = third_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1] 
+                else:
+                    self.EP_end = fourth_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]    
+            else:
+                if(self.first_down):
+                    self.new_down = 1
+                    self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds)
+                    self.EP_end = first_down_EPA_list[self.new_yardline-1][min(100-self.new_yardline,10)-1]
+
+                elif(self.fumbles_lost or self.defense_int): #turnover
+                    self.new_down = 1
+                    self.new_yardline = int(50+self.yardline.offset+self.passing_incmp_air_yds+self.rushing_yds-self.fumbles_rec_yds-self.defense_int_yds)   
+                    if(self.new_yardline <= 0): #touchback
+                        self.new_yardline = 20
+                    self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
+                else:
+                    self.new_down = self.down + 1
+                    if(self.punting_touchback):
+                        self.new_yardline = 20
+                        self.new_yards_togo = 10
+                    else:    
+                        self.new_yardline = int(50+self.yardline.offset+self.passing_yds+self.rushing_yds+self.passing_sk_yds+self.punting_yds-self.puntret_yds-self.kicking_fgmissed_yds)
+                        self.new_yards_togo = self.yards_togo-self.passing_yds-self.rushing_yds+self.passing_sk_yds
+                     
+                    if(self.new_down == 2):
+                        self.EP_end = second_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]
+                    elif(self.new_down == 3):
+                        self.EP_end = third_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1]
+                    elif(self.new_down == 4):
+                        self.EP_end = fourth_down_EPA_list[self.new_yardline-1][min(self.new_yards_togo,30)-1] 
+                    else:
+                        self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
+        else:
+            if(self.kicking_xpa):
+                self.EP_start = 6.95
+                if(self.kicking_xpmade):
+                    self.EP_end = 7
+                else:
+                    self.EP_end = 6  
+            if(self.kicking_tot and not self.kicking_touchback):
+                if self.kickret_tds:
+                    self.EP_end = -6.95
+                else:    
+                    self.new_yardline = 35+self.kicking_yds-self.kickret_yds
+                    self.EP_end = -float(first_down_EPA_list[(100-self.new_yardline)-1][min(100-self.new_yardline,10)-1])
+        return float(self.EP_end) - float(self.EP_start)
+
+
     def __str__(self):
         if self.team:
             if self.down != 0:
-                return '(%s, %s, Q%d, %d and %d) %s' \
+                return '(%s, %s, Q%d, %d and %d) %s EPA = %f' \
                        % (self.team, self.data['yrdln'], self.time.qtr,
-                          self.down, self.yards_togo, self.desc)
+                          self.down, self.yards_togo, self.desc, self.EPA)
             else:
-                return '(%s, %s, Q%d) %s' \
+                if self.kicking_tot or self.kicking_xpa:
+                    return '(%s, %s, Q%d) %s EPA = %f' \
+                       % (self.team, self.data['yrdln'], self.time.qtr,
+                          self.desc,  self.EPA)
+                else:    
+                    return '(%s, %s, Q%d) %s' \
                        % (self.team, self.data['yrdln'], self.time.qtr,
                           self.desc)
         return self.desc
@@ -726,6 +854,9 @@ class Play (object):
             raise AttributeError
         return 0
 
+
+
+        
 
 def _json_team_stats(data):
     """
